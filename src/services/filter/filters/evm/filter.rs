@@ -2034,6 +2034,81 @@ mod tests {
 		);
 	}
 
+	#[test]
+	fn test_find_matching_events_uniswap_v3_swap_int24_uint160() {
+		let filter = create_test_filter();
+		let pool = "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640";
+		let abi = ContractSpec::EVM(EVMContractSpec::from(json!([{
+			"type": "event",
+			"name": "Swap",
+			"anonymous": false,
+			"inputs": [
+				{ "name": "sender", "type": "address", "indexed": true },
+				{ "name": "recipient", "type": "address", "indexed": true },
+				{ "name": "amount0", "type": "int256", "indexed": false },
+				{ "name": "amount1", "type": "int256", "indexed": false },
+				{ "name": "sqrtPriceX96", "type": "uint160", "indexed": false },
+				{ "name": "liquidity", "type": "uint128", "indexed": false },
+				{ "name": "tick", "type": "int24", "indexed": false }
+			]
+		}])));
+
+		// Mainnet USDC/WETH 0.05% pool, tx 0x624dc3cc2fd135a250696c8158f94f75193c872e6f76640df5baba7cd689ddce
+		let log = EVMReceiptLog {
+			data: Bytes(
+				hex::decode(concat!(
+					"fffffffffffffffffffffffffffffffffffffffffffffffffffffffdfa2dd666",
+					"0000000000000000000000000000000000000000000000003557b12b95fd3550",
+					"0000000000000000000000000000000000005225affc04636c00000000000000",
+					"0000000000000000000000000000000000000000000000262d7af69a64a1ef00",
+					"00000000000000000000000000000000000000000000000000000000000309ab",
+				))
+				.unwrap()
+				.into(),
+			),
+			..create_test_log(
+				Address::from_str(pool).unwrap(),
+				"0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67",
+				Address::from_str("0xeff6cb8b614999d130e537751ee99724d01aa167").unwrap(),
+				Address::from_str("0xeff6cb8b614999d130e537751ee99724d01aa167").unwrap(),
+				"00",
+			)
+		};
+
+		for expression in [
+			"tick > 190000",
+			"sqrtPriceX96 > 1000000",
+			"amount0 < 0 AND tick == 199083",
+		] {
+			let mut matched_events = Vec::new();
+			let mut matched_on_args = EVMMatchArguments {
+				events: Some(Vec::new()),
+				functions: None,
+			};
+			let mut involved_addresses = Vec::new();
+			let monitor = create_test_monitor(
+				vec![EventCondition {
+					signature: "Swap(address,address,int256,int256,uint160,uint128,int24)"
+						.to_string(),
+					expression: Some(expression.to_string()),
+				}],
+				vec![],
+				vec![],
+				vec![create_test_address(pool, Some(abi.clone()))],
+			);
+
+			filter.find_matching_events_for_transaction(
+				std::slice::from_ref(&log),
+				&monitor,
+				&mut matched_events,
+				&mut matched_on_args,
+				&mut involved_addresses,
+			);
+
+			assert_eq!(matched_events.len(), 1, "should match: {}", expression);
+		}
+	}
+
 	#[tokio::test]
 	async fn test_find_matching_events_with_expression() {
 		let filter = create_test_filter();
